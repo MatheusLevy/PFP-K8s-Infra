@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3-ninja
+  namespace: s3-ninja
+  labels:
+    app: s3-ninja
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: s3-ninja
+  template:
+    metadata:
+      labels:
+        app: s3-ninja
+    spec:
+      securityContext:
+        fsGroup: 2000
+      initContainers:
+        - name: fix-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 2000:2000 /home/sirius/data"]
+          volumeMounts:
+            - name: s3-ninja-data
+              mountPath: /home/sirius/data
+      containers:
+        - name: s3-ninja
+          image: scireum/s3-ninja:latest
+          ports:
+            - containerPort: 9000
+              protocol: TCP
+          env:
+            - name: NINJA_OPTS
+              value: "-Dninja.port=9000 -Dninja.contextPath=/ -Dninja.docBase=/home/sirius/data"
+          volumeMounts:
+            - name: s3-ninja-data
+              mountPath: /home/sirius/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: s3-ninja-data
+          persistentVolumeClaim:
+            claimName: s3-ninja-data-pvc

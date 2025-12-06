@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init-bucket
+  namespace: mlflow
+  labels:
+    app: minio-init
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: minio-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc@sha256:68d8c80f43908b02daa285e55547131870a1d36b3ffe272c26d7d8f4d52d1e5c
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: S3_ENDPOINT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-secrets
+                  key: S3_ENDPOINT_URL
+          command:
+            - /bin/sh
+            - -c
+            - |
+              /usr/bin/mc alias set ninjas3 ${S3_ENDPOINT_URL} ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY} &&
+              /usr/bin/mc mb ninjas3/mlflow || true;
+              /usr/bin/mc mb ninjas3/data-labeling-s3 || true;
+              exit 0;

@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dvc-pipeline-config
+  namespace: dvc-pipeline
+  labels:
+    app: dvc-pipeline
+data:
+  # Endpoint do S3-Ninja interno do cluster
+  S3_ENDPOINT_URL: "http://s3-ninja.s3-ninja.svc.cluster.local:9000"

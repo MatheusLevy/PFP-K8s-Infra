@@ -1,0 +1,148 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dvc-pipeline-job
+  namespace: dvc-pipeline
+  labels:
+    app: dvc-pipeline
+spec:
+  # Mantém o Job por 1 hora após completar para análise de logs
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: dvc-pipeline
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: dvc-pipeline
+          image: dvc-pipeline:local
+          imagePullPolicy: Never
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              
+              # Setup WSL2 NVIDIA driver symlinks
+              WSL_DRIVER_DIR=$(find /usr/lib/wsl/drivers -maxdepth 1 -type d -name "nv_dispi*" 2>/dev/null | head -1)
+              if [ -n "$WSL_DRIVER_DIR" ]; then
+                echo "Found WSL NVIDIA driver at: $WSL_DRIVER_DIR"
+                mkdir -p /usr/lib/wsl/lib
+                ln -sf "$WSL_DRIVER_DIR/libcuda.so.1.1" /usr/lib/wsl/lib/libcuda.so.1 2>/dev/null || true
+                ln -sf "$WSL_DRIVER_DIR/libcuda.so.1.1" /usr/lib/wsl/lib/libcuda.so 2>/dev/null || true
+                ln -sf "$WSL_DRIVER_DIR/libnvidia-ml.so.1" /usr/lib/wsl/lib/libnvidia-ml.so.1 2>/dev/null || true
+                ln -sf "$WSL_DRIVER_DIR/libnvidia-ptxjitcompiler.so.1" /usr/lib/wsl/lib/libnvidia-ptxjitcompiler.so.1 2>/dev/null || true
+                export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
+                ldconfig 2>/dev/null || true
+              fi
+              
+              # Configure AWS credentials
+              mkdir -p ~/.aws
+              echo "[pfp]" > ~/.aws/credentials
+              echo "aws_access_key_id = $AWS_ACCESS_KEY_ID" >> ~/.aws/credentials
+              echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
+              echo "[default]" >> ~/.aws/credentials
+              echo "aws_access_key_id = $AWS_ACCESS_KEY_ID" >> ~/.aws/credentials
+              echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
+              echo "[profile pfp]" > ~/.aws/config
+              echo "region = $AWS_DEFAULT_REGION" >> ~/.aws/config
+              echo "[default]" >> ~/.aws/config
+              echo "region = $AWS_DEFAULT_REGION" >> ~/.aws/config
+              
+
+              # Step 1 Download Engineering
+              echo "=== Setting up PFP-IA-Engineering ==="
+              cd /app
+              git clone https://github.com/MatheusLevy/PFP-IA-Engineering.git
+              cd PFP-IA-Engineering
+              git pull origin main
+              ls -la
+
+              # Step 2 UV Environment Setup
+              echo "Setting up UV Environment..."
+              uv sync --frozen -q
+
+              # Step 3 DVC Pull data_info.csv
+
+              uv run dvc init
+              echo "Pulling data from DVC remote..."
+              uv run dvc get https://github.com/MatheusLevy/PFP-IA-Research dataset/dataset_info.csv
+
+              # Step 4 DVC Pull data/
+              echo "Pulling data from DVC remote..."
+              uv run dvc get https://github.com/MatheusLevy/PFP-DataLabeling data/ -o ./data
+
+              # Step 5 Run Data Labeling Pipeline
+              echo "Running Data Labeling Pipeline..."
+              uv run dvc repro
+          env:
+            - name: LD_LIBRARY_PATH
+              value: "/usr/lib/wsl/lib:/usr/local/cuda-12.6/compat:/usr/local/nvidia/lib64"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dvc-pipeline-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dvc-pipeline-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: dvc-pipeline-secrets
+                  key: AWS_DEFAULT_REGION
+            - name: DVC_REMOTE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: dvc-pipeline-config
+                  key: S3_ENDPOINT_URL
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dvc-pipeline-secrets
+                  key: WANDB_API_KEY
+            - name: DVC_REMOTE_DATA_LABELING_ENDPOINTURL
+              valueFrom:
+                configMapKeyRef:
+                  name: dvc-pipeline-config
+                  key: S3_ENDPOINT_URL
+            - name: DVC_REMOTE_DATA_LABELING_S3_ENDPOINTURL
+              valueFrom:
+                configMapKeyRef:
+                  name: dvc-pipeline-config
+                  key: S3_ENDPOINT_URL
+            - name: MLFLOW_S3_ENDPOINT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dvc-pipeline-secrets
+                  key: DVC_REMOTE_URL
+            - name: MLFLOW_TRACKING_URI
+              valueFrom:
+                secretKeyRef:
+                  name: dvc-pipeline-secrets
+                  key: MLFLOW_TRACKING_URI
+          volumeMounts:
+            - name: dvc-data
+              mountPath: /app/dvc-cache
+            - name: dshm
+              mountPath: /dev/shm
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "4000m"
+              nvidia.com/gpu: 1
+            limits:
+              memory: "24Gi"
+              cpu: "11000m"
+              nvidia.com/gpu: 1
+      volumes:
+        - name: dvc-data
+          persistentVolumeClaim:
+            claimName: dvc-pipeline-data-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi

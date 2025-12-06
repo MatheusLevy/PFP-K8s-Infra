@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dvc-pipeline-scheduled
+  namespace: dvc-pipeline
+  labels:
+    app: dvc-pipeline
+spec:
+  # Executa todos os dias às 2:00 AM
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app: dvc-pipeline
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dvc-pipeline
+              image: dvc-pipeline:local
+              imagePullPolicy: Never
+              env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: dvc-pipeline-secrets
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dvc-pipeline-secrets
+                      key: AWS_SECRET_ACCESS_KEY
+                - name: AWS_DEFAULT_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: dvc-pipeline-secrets
+                      key: AWS_DEFAULT_REGION
+                - name: DVC_REMOTE_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dvc-pipeline-config
+                      key: S3_ENDPOINT_URL
+                - name: WANDB_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: dvc-pipeline-secrets
+                      key: WANDB_API_KEY
+              volumeMounts:
+                - name: dvc-data
+                  mountPath: /app/data
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "500m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "2000m"
+          volumes:
+            - name: dvc-data
+              persistentVolumeClaim:
+                claimName: dvc-pipeline-data-pvc

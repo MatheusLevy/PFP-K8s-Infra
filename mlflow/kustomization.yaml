@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mlflow
+
+resources:
+  - namespace.yaml
+  - secrets.yaml
+  - postgres-pvc.yaml
+  - postgres-deployment.yaml
+  - postgres-service.yaml
+  - minio-init-job.yaml
+  - mlflow-deployment.yaml
+  - mlflow-service.yaml

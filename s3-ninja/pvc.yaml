@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s3-ninja-data-pvc
+  namespace: s3-ninja
+  labels:
+    app: s3-ninja
+spec:
+  storageClassName: s3-ninja-storage
+  volumeName: s3-ninja-pv
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

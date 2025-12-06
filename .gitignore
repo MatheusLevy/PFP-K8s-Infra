@@ -1,0 +1,22 @@
+# Kubernetes Secrets - contém credenciais sensíveis
+**/secrets.yaml
+**/secrets.yml
+
+# Arquivos de ambiente com credenciais
+.env
+.env.*
+*.env
+
+# Arquivos de credenciais AWS
+.aws/
+credentials
+
+# Chaves privadas
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Arquivos de configuração local
+*.local.yaml
+*.local.yml
